@@ -10,16 +10,46 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom injection for clean chat styling
+# Custom injection for clean, responsive chat styling on mobile and desktop
 st.markdown("""
     <style>
-    .stApp { max-width: 800px; margin: 0 auto; }
-    [data-testid="stChatMessage"] { border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
+    /* Desktop Max Width Control */
+    .stApp { 
+        max-width: 800px; 
+        margin: 0 auto; 
+    }
+    
+    /* Base chat message styling */
+    [data-testid="stChatMessage"] { 
+        border-radius: 12px; 
+        padding: 1rem; 
+        margin-bottom: 1rem; 
+    }
+
+    /* Mobile screen adjustments (under 768px) */
+    @media (max-width: 768px) {
+        .stApp {
+            padding-left: 10px;
+            padding-right: 10px;
+        }
+        h1 {
+            font-size: 1.8rem !important; /* Scale down heading to prevent wrapping */
+        }
+        [data-testid="stChatMessage"] {
+            padding: 0.6rem;
+            font-size: 14px; /* Compact text size for mobile viewing */
+            margin-bottom: 0.6rem;
+        }
+        .block-container {
+            padding-top: 1rem !important;
+            padding-bottom: 6rem !important; /* Safety padding so input box doesn't overlap text */
+        }
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. Top Navigation Bar (New Chat Control)
-col1, col2 = st.columns([8, 2])
+# 2. Top Navigation Bar (New Chat Control - adjusted ratio for mobile balance)
+col1, col2 = st.columns([7, 3])
 with col1:
     st.title("💀 ViralX Agent")
 with col2:
