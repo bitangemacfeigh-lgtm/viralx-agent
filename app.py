@@ -2,7 +2,7 @@ import streamlit as st
 import asyncio
 from agent import execute_agent_prompt
 
-# 1. Claude-inspired Page Setup (Minimal Stark/Dark aesthetic)
+# 1. Claude-inspired General Page Setup (Stripping out tech branding)
 st.set_page_config(
     page_title="ViralX // Assistant", 
     page_icon="💀", 
@@ -33,27 +33,26 @@ st.markdown("""
             padding-right: 10px;
         }
         h1 {
-            font-size: 1.8rem !important; /* Scale down heading to prevent wrapping */
+            font-size: 1.8rem !important;
         }
         [data-testid="stChatMessage"] {
             padding: 0.6rem;
-            font-size: 14px; /* Compact text size for mobile viewing */
+            font-size: 14px;
             margin-bottom: 0.6rem;
         }
         .block-container {
             padding-top: 1rem !important;
-            padding-bottom: 6rem !important; /* Safety padding so input box doesn't overlap text */
+            padding-bottom: 6rem !important;
         }
     }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. Top Navigation Bar (New Chat Control - adjusted ratio for mobile balance)
+# 2. Top Navigation Bar (General Purpose Branding)
 col1, col2 = st.columns([7, 3])
 with col1:
     st.title("💀 ViralX Agent")
 with col2:
-    # Clicking this completely resets the persistent session history
     if st.button("➕ New Chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
@@ -69,8 +68,8 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. Bottom Space Chat Input Gateway
-if prompt := st.chat_input("Ask ViralX to analyze your architecture, iterate, or proceed..."):
+# 5. Bottom Space Chat Input Gateway (Open-ended & Random Input)
+if prompt := st.chat_input("Drop anything here—a concept, a trend, a place, or a bad habit..."):
     
     # Render user query instantly in the thread flow
     st.session_state.messages.append({"role": "user", "content": prompt})
@@ -80,11 +79,16 @@ if prompt := st.chat_input("Ask ViralX to analyze your architecture, iterate, or
     # Compute execution streaming placeholder
     with st.chat_message("assistant"):
         with st.spinner("THINKING..."):
-            # Execute context prompt matching the engine architecture
+            # Inject a clear framing instruction so the agent knows to treat this as a general topic, not tech
+            general_modifier = f"CRITICAL DIRECTION: The user is NOT submitting a tech stack. Roast this topic generally, randomly, and brutally based on real-world culture and context: {prompt}"
+            
             try:
-                res = asyncio.run(execute_agent_prompt(prompt))
+                res = asyncio.run(execute_agent_prompt(general_modifier))
                 if res.success:
                     response_text = res.content
+                    
+                    # Post-processing patch to clean out legacy technical hashtags if the engine leaks them
+                    response_text = response_text.replace("#RoastMyStack", "#ViralXRoast").replace("tech stack", "vibe").replace("architecture", "logic")
                 else:
                     response_text = f"Execution Fault: {res.content}"
             except Exception as e:
