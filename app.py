@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 import requests
 import io
+import time
 from PIL import Image, ImageDraw, ImageFont
 from streamlit_javascript import st_javascript  # Needs 'streamlit-javascript' in requirements.txt
 from agent import execute_agent_prompt
@@ -51,6 +52,19 @@ st.markdown("""
             padding-top: 1rem !important;
             padding-bottom: 6rem !important;
         }
+    }
+    
+    /* Terminal Loading Box Styling */
+    .terminal-loader {
+        background-color: #0c0c0c;
+        border: 1px solid #ff2e59;
+        border-radius: 8px;
+        padding: 15px;
+        font-family: 'Courier New', Courier, monospace;
+        color: #f5f5f5;
+        margin-bottom: 15px;
+        font-size: 14px;
+        line-height: 1.5;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -175,6 +189,24 @@ def get_stats():
     recent_logs = cursor.fetchall()
     conn.close()
     return total_chats, avg_bdi, avg_time, recent_logs
+
+def get_leaderboard():
+    """Fetches the top 5 brutal inputs based on BDI scores for public display."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT prompt, bdi 
+            FROM interactions 
+            WHERE bdi IS NOT NULL 
+            ORDER BY bdi DESC, id DESC 
+            LIMIT 5
+        """)
+        leaders = cursor.fetchall()
+        conn.close()
+        return leaders
+    except Exception:
+        return []
 
 # Run database schema verification
 init_db()
@@ -318,45 +350,69 @@ if prompt := st.chat_input("Drop anything here—a concept, a trend, a place, or
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("THINKING..."):
-            # Construct modified instructional system framework based on selected Pain Profile
-            if personality_mode == "💼 Corporate Savage":
-                style_direction = "Adopt a hyper-passive-aggressive corporate email/workplace consultant persona. Reference performance reviews, standard operating procedures, and KPIs."
-            elif personality_mode == "🎓 Intellectual Elitist":
-                style_direction = "Adopt an incredibly condescending, pretentious academic persona. Use overly intellectual terminology, esoteric vocabulary, and look down heavily on the user's simplistic thoughts."
-            elif personality_mode == "🧠 Brainrot Overdose":
-                style_direction = "Adopt a degenerate, terminally-online Gen-Z persona. Squeeze in slang like Skibidi, Ohio, Rizz, Gyatt, Fanum Tax, Sigma, and Mewing mercilessly."
-            else:
-                style_direction = "Roast this topic generally, randomly, and brutally based on real-world culture and context."
+        # Create dedicated live terminal simulation container
+        terminal_placeholder = st.empty()
+        
+        terminal_steps = [
+            "[SYSTEM] Initializing telemetry handshake...",
+            "[SYSTEM] Fetching subject background file...",
+            "[SYSTEM] Parsing personal vanity metrics...",
+            "[SYSTEM] Locating moral compromise parameters...",
+            "[SYSTEM] Quantifying self-deception coefficients...",
+            "[SYSTEM] Generating tailored existential dread... 🔥"
+        ]
+        
+        running_terminal_logs = ""
+        for step in terminal_steps:
+            running_terminal_logs += f"{step}<br>"
+            terminal_placeholder.markdown(f"""
+                <div class="terminal-loader">
+                    {running_terminal_logs}
+                    <span style='color: #ff2e59; font-weight: bold;'>⚡ ANALYZING...</span>
+                </div>
+            """, unsafe_allow_html=True)
+            time.sleep(0.4)  # Natural visual pacing for the diagnostic output
+            
+        # Construct modified instructional system framework based on selected Pain Profile
+        if personality_mode == "💼 Corporate Savage":
+            style_direction = "Adopt a hyper-passive-aggressive corporate email/workplace consultant persona. Reference performance reviews, standard operating procedures, and KPIs."
+        elif personality_mode == "🎓 Intellectual Elitist":
+            style_direction = "Adopt an incredibly condescending, pretentious academic persona. Use overly intellectual terminology, esoteric vocabulary, and look down heavily on the user's simplistic thoughts."
+        elif personality_mode == "🧠 Brainrot Overdose":
+            style_direction = "Adopt a degenerate, terminally-online Gen-Z persona. Squeeze in slang like Skibidi, Ohio, Rizz, Gyatt, Fanum Tax, Sigma, and Mewing mercilessly."
+        else:
+            style_direction = "Roast this topic generally, randomly, and brutally based on real-world culture and context."
 
-            general_modifier = f"CRITICAL DIRECTION: The user is NOT submitting a tech stack. {style_direction} Roast this query: {prompt}"
-            
-            try:
-                res = asyncio.run(execute_agent_prompt(general_modifier))
-                if res.success:
-                    response_text = res.content
-                    response_text = response_text.replace("#RoastMyStack", "#ViralXRoast").replace("tech stack", "vibe").replace("architecture", "logic")
-                else:
-                    response_text = f"Execution Fault: {res.content}"
-            except Exception as e:
-                response_text = f"System Error: {str(e)}"
-            
-            st.markdown(response_text)
-            
-            # Offer download option immediately upon generation
-            bdi_match = re.search(r'(\d+)%', response_text)
-            bdi_val = int(bdi_match.group(1)) if bdi_match else 100
-            try:
-                card_png = generate_roast_card(prompt, bdi_val, response_text)
-                st.download_button(
-                    label="📥 Download Roast Card PNG",
-                    data=card_png,
-                    file_name="ViralX_Roast_Latest.png",
-                    mime="image/png",
-                    key="dl_btn_latest"
-                )
-            except Exception:
-                pass
+        general_modifier = f"CRITICAL DIRECTION: The user is NOT submitting a tech stack. {style_direction} Roast this query: {prompt}"
+        
+        try:
+            res = asyncio.run(execute_agent_prompt(general_modifier))
+            if res.success:
+                response_text = res.content
+                response_text = response_text.replace("#RoastMyStack", "#ViralXRoast").replace("tech stack", "vibe").replace("architecture", "logic")
+            else:
+                response_text = f"Execution Fault: {res.content}"
+        except Exception as e:
+            response_text = f"System Error: {str(e)}"
+        
+        # Clear the terminal simulator and output the raw markdown response
+        terminal_placeholder.empty()
+        st.markdown(response_text)
+        
+        # Offer download option immediately upon generation
+        bdi_match = re.search(r'(\d+)%', response_text)
+        bdi_val = int(bdi_match.group(1)) if bdi_match else 100
+        try:
+            card_png = generate_roast_card(prompt, bdi_val, response_text)
+            st.download_button(
+                label="📥 Download Roast Card PNG",
+                data=card_png,
+                file_name="ViralX_Roast_Latest.png",
+                mime="image/png",
+                key="dl_btn_latest"
+            )
+        except Exception:
+            pass
             
     st.session_state.messages.append({"role": "assistant", "content": response_text})
     
@@ -364,6 +420,23 @@ if prompt := st.chat_input("Drop anything here—a concept, a trend, a place, or
         log_interaction(prompt, response_text)
     except Exception:
         pass
+
+st.write("---")
+
+# --- NEW ADDITION: 🏆 GAMIFIED LIVE EGO LEADERBOARD ---
+st.write("### 🏆 Today's Most Broken Souls")
+leaders = get_leaderboard()
+if leaders:
+    for rank, (lead_prompt, lead_bdi) in enumerate(leaders, 1):
+        # Prevent markdown/HTML breakdown on absurd queries
+        sanitized_lead_prompt = lead_prompt.replace("<", "&lt;").replace(">", "&gt;")
+        st.markdown(
+            f"**#{rank}. {sanitized_lead_prompt}** "
+            f"<span style='color: #ff2e59; font-weight: bold;'>BDI: {lead_bdi}%</span>",
+            unsafe_allow_html=True
+        )
+else:
+    st.info("No broken souls recorded yet. Go claim the throne.")
 
 
 # ==========================================
