@@ -1,7 +1,3 @@
-fastapi 
-uvicorn 
-httpx 
-pydantic 
-click
-streamlit
-"streamlit-javascript" 
+streamlit 
+requests 
+streamlit-javascript
