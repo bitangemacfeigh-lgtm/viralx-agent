@@ -1,5 +1,8 @@
 import streamlit as st
 import asyncio
+import sqlite3
+import re
+from datetime import datetime
 from agent import execute_agent_prompt
 
 # 1. Claude-inspired General Page Setup (Stripping out tech branding)
@@ -48,6 +51,91 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ==========================================
+# 📊 TELEMETRY ENGINE & SECURITY SETUP
+# ==========================================
+# Start tracking the active session duration immediately
+if "session_start" not in st.session_state:
+    st.session_state.session_start = datetime.utcnow()
+
+# Your Admin Password to unlock the dashboard at the bottom of the page
+ADMIN_PASSWORD = "ViralXAdmin2026!"
+DB_FILE = "viralx_stats.db"
+
+def init_db():
+    """Initializes the telemetry database locally."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS interactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            prompt TEXT,
+            bdi INTEGER,
+            response TEXT,
+            location TEXT,
+            time_spent_seconds REAL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def get_user_location():
+    """Extracts IP address and Country from Streamlit deployment headers."""
+    try:
+        headers = st.context.headers
+        ip = headers.get("X-Forwarded-For", "Unknown IP").split(",")[0].strip()
+        country = headers.get("Cf-Ipcountry", "Unknown Country")
+        return f"{ip} ({country})"
+    except Exception:
+        return "Localhost/Unknown"
+
+def log_interaction(prompt: str, response: str):
+    """Saves the user's prompt, response, location, and elapsed time."""
+    # Try to capture the BDI percentage from the generated text
+    bdi_match = re.search(r'(\d+)%', response)
+    bdi_val = int(bdi_match.group(1)) if bdi_match else None
+    
+    # Measure the elapsed active time since the chat loaded or was reset
+    elapsed_time = (datetime.utcnow() - st.session_state.session_start).total_seconds()
+    location = get_user_location()
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO interactions (timestamp, prompt, bdi, response, location, time_spent_seconds) 
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (datetime.utcnow().isoformat(), prompt, bdi_val, response, location, elapsed_time))
+    conn.commit()
+    conn.close()
+
+def get_stats():
+    """Retrieves computed statistics and lists the latest logs."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*), AVG(bdi), AVG(time_spent_seconds) FROM interactions")
+    total_chats, avg_bdi, avg_time = cursor.fetchone()
+    
+    avg_bdi = round(avg_bdi, 1) if avg_bdi is not None else 0
+    avg_time = round(avg_time, 1) if avg_time is not None else 0
+    
+    cursor.execute("""
+        SELECT timestamp, prompt, bdi, location, time_spent_seconds 
+        FROM interactions 
+        ORDER BY id DESC LIMIT 15
+    """)
+    recent_logs = cursor.fetchall()
+    conn.close()
+    return total_chats, avg_bdi, avg_time, recent_logs
+
+# Run database schema verification
+init_db()
+
+
+# ==========================================
+# 📱 USER INTERFACE RENDER
+# ==========================================
+
 # 2. Top Navigation Bar (General Purpose Branding)
 col1, col2 = st.columns([7, 3])
 with col1:
@@ -55,6 +143,8 @@ with col1:
 with col2:
     if st.button("➕ New Chat", use_container_width=True):
         st.session_state.messages = []
+        # Reset the session clock for a fresh start
+        st.session_state.session_start = datetime.utcnow()
         st.rerun()
 
 st.divider()
@@ -98,3 +188,73 @@ if prompt := st.chat_input("Drop anything here—a concept, a trend, a place, or
             
     # Append assistant execution response directly to continue thread
     st.session_state.messages.append({"role": "assistant", "content": response_text})
+    
+    # Log the interaction variables silently to SQL database
+    try:
+        log_interaction(prompt, response_text)
+    except Exception:
+        pass
+
+
+# ==========================================
+# 🔒 HIDDEN PRIVATE ADMIN CONTROLS
+# ==========================================
+st.write("---")
+
+# Verify if URL contains the administrative flag (e.g. ?admin=true)
+is_admin_via_url = st.query_params.get("admin") == "true"
+
+if is_admin_via_url:
+    # Direct access to the admin metrics via custom secret link
+    with st.expander("📊 Private Admin Telemetry Panel (Unlocked via URL)"):
+        try:
+            total_chats, avg_bdi, avg_time, logs = get_stats()
+            
+            metric_col1, metric_col2, metric_col3 = st.columns(3)
+            metric_col1.metric("Total Generated", total_chats)
+            metric_col2.metric("Avg BDI Score", f"{avg_bdi}%")
+            metric_col3.metric("Avg Session Time", f"{avg_time}s")
+            
+            if logs:
+                st.write("### Private Telemetry Database Logs")
+                log_data = [{
+                    "Time": l[0][:16].replace("T", " "), 
+                    "User Query": l[1], 
+                    "BDI": f"{l[2]}%" if l[2] else "N/A",
+                    "Location/IP Address": l[3],
+                    "Time Active": f"{round(l[4], 1)}s"
+                } for l in logs]
+                st.table(log_data)
+            else:
+                st.info("No recorded stats yet.")
+        except Exception as e:
+            st.error(f"Error accessing records: {e}")
+else:
+    # Discrete password option at the bottom of the page
+    with st.expander("🔑 Access System Panel"):
+        entered_pass = st.text_input("Enter Master Key", type="password")
+        if entered_pass == ADMIN_PASSWORD:
+            try:
+                total_chats, avg_bdi, avg_time, logs = get_stats()
+                
+                metric_col1, metric_col2, metric_col3 = st.columns(3)
+                metric_col1.metric("Total Generated", total_chats)
+                metric_col2.metric("Avg BDI Score", f"{avg_bdi}%")
+                metric_col3.metric("Avg Session Time", f"{avg_time}s")
+                
+                if logs:
+                    st.write("### Private Telemetry Database Logs")
+                    log_data = [{
+                        "Time": l[0][:16].replace("T", " "), 
+                        "User Query": l[1], 
+                        "BDI": f"{l[2]}%" if l[2] else "N/A",
+                        "Location/IP Address": l[3],
+                        "Time Active": f"{round(l[4], 1)}s"
+                    } for l in logs]
+                    st.table(log_data)
+                else:
+                    st.info("No recorded stats yet.")
+            except Exception as e:
+                st.error(f"Error accessing records: {e}")
+        elif entered_pass:
+            st.error("Invalid access key.")
