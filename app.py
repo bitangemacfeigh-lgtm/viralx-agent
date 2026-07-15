@@ -4,6 +4,7 @@ import sqlite3
 import re
 from datetime import datetime
 import requests
+from streamlit_javascript import st_javascript  # Needs 'streamlit-javascript' in requirements.txt
 from agent import execute_agent_prompt
 
 # 1. Claude-inspired General Page Setup (Stripping out tech branding)
@@ -82,33 +83,41 @@ def init_db():
     conn.close()
 
 def get_client_ip():
-    """Extracts the true public IP address of the user."""
+    """Extracts the true public IP address of the user using JS client-side lookup as a guaranteed fallback."""
+    # 1. Fallback 1: Attempt client-side browser JS request (Bypasses all server proxies)
+    try:
+        js_ip = st_javascript("await fetch('https://api.ipify.org?format=json').then(r => r.json()).then(d => d.ip)")
+        if js_ip and js_ip != 0 and "127.0.0.1" not in str(js_ip) and "::1" not in str(js_ip):
+            return str(js_ip).strip()
+    except Exception:
+        pass
+
+    # 2. Fallback 2: Streamlit's proxy headers
     try:
         headers = st.context.headers
         if headers:
-            # X-Forwarded-For contains the true client IP as the first element
             xff = headers.get("X-Forwarded-For") or headers.get("x-forwarded-for")
             if xff:
                 true_ip = xff.split(",")[0].strip()
-                if not true_ip.startswith("10.") and not true_ip.startswith("172.") and not true_ip.startswith("192."):
+                if not true_ip.startswith("10.") and not true_ip.startswith("172.") and not true_ip.startswith("192.") and "127.0.0.1" not in true_ip:
                     return true_ip
             
             for header_key in ["X-Real-IP", "x-real-ip", "CF-Connecting-IP", "cf-connecting-ip"]:
                 val = headers.get(header_key)
-                if val:
+                if val and "127.0.0.1" not in val:
                     return val
 
-        # Try fallback native property
         st_ip = st.context.ip_address
-        if st_ip and not st_ip.startswith("10."):
+        if st_ip and not st_ip.startswith("10.") and "127.0.0.1" not in st_ip and "::1" not in st_ip:
             return st_ip
     except Exception:
         pass
+        
     return "Unknown IP"
 
 def get_ip_location(ip):
     """Resolves a public IP address to a physical location."""
-    if not ip or ip == "Unknown IP" or ip.startswith("10.") or ip.startswith("127.") or ip.startswith("172."):
+    if not ip or ip == "Unknown IP" or ip.startswith("10.") or ip.startswith("127.") or ip.startswith("172.") or "::1" in ip or "127.0.0.1" in ip:
         return "Local/Internal IP"
         
     try:
@@ -131,11 +140,9 @@ def get_user_location():
 
 def log_interaction(prompt: str, response: str):
     """Saves the user's prompt, response, location, and elapsed time."""
-    # Try to capture the BDI percentage from the generated text
     bdi_match = re.search(r'(\d+)%', response)
     bdi_val = int(bdi_match.group(1)) if bdi_match else None
     
-    # Measure the elapsed active time since the chat loaded or was reset
     elapsed_time = (datetime.utcnow() - st.session_state.session_start).total_seconds()
     location = get_user_location()
     
@@ -182,7 +189,6 @@ with col1:
 with col2:
     if st.button("➕ New Chat", use_container_width=True):
         st.session_state.messages = []
-        # Reset the session clock for a fresh start
         st.session_state.session_start = datetime.utcnow()
         st.rerun()
 
@@ -200,23 +206,18 @@ for message in st.session_state.messages:
 # 5. Bottom Space Chat Input Gateway (Open-ended & Random Input)
 if prompt := st.chat_input("Drop anything here—a concept, a trend, a place, or a bad habit..."):
     
-    # Render user query instantly in the thread flow
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Compute execution streaming placeholder
     with st.chat_message("assistant"):
         with st.spinner("THINKING..."):
-            # Inject a clear framing instruction so the agent knows to treat this as a general topic, not tech
             general_modifier = f"CRITICAL DIRECTION: The user is NOT submitting a tech stack. Roast this topic generally, randomly, and brutally based on real-world culture and context: {prompt}"
             
             try:
                 res = asyncio.run(execute_agent_prompt(general_modifier))
                 if res.success:
                     response_text = res.content
-                    
-                    # Post-processing patch to clean out legacy technical hashtags if the engine leaks them
                     response_text = response_text.replace("#RoastMyStack", "#ViralXRoast").replace("tech stack", "vibe").replace("architecture", "logic")
                 else:
                     response_text = f"Execution Fault: {res.content}"
@@ -225,10 +226,8 @@ if prompt := st.chat_input("Drop anything here—a concept, a trend, a place, or
             
             st.markdown(response_text)
             
-    # Append assistant execution response directly to continue thread
     st.session_state.messages.append({"role": "assistant", "content": response_text})
     
-    # Log the interaction variables silently to SQL database
     try:
         log_interaction(prompt, response_text)
     except Exception:
@@ -238,7 +237,6 @@ if prompt := st.chat_input("Drop anything here—a concept, a trend, a place, or
 # ==========================================
 # 🔒 SECURE STEALTH TELEMETRY GATEWAY (100% Hidden)
 # ==========================================
-# Look for a secret query parameter key: ?secret=ViralXAdmin2026!
 is_admin_via_secret = st.query_params.get("secret") == ADMIN_PASSWORD
 
 if is_admin_via_secret:
