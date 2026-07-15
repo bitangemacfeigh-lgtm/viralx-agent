@@ -4,3 +4,4 @@ httpx
 pydantic 
 click
 streamlit
+"streamlit-javascript" 
