@@ -197,16 +197,14 @@ if prompt := st.chat_input("Drop anything here—a concept, a trend, a place, or
 
 
 # ==========================================
-# 🔒 HIDDEN PRIVATE ADMIN CONTROLS
+# 🔒 SECURE STEALTH TELEMETRY GATEWAY (100% Hidden)
 # ==========================================
-st.write("---")
+# Look for a secret query parameter key: ?secret=ViralXAdmin2026!
+is_admin_via_secret = st.query_params.get("secret") == ADMIN_PASSWORD
 
-# Verify if URL contains the administrative flag (e.g. ?admin=true)
-is_admin_via_url = st.query_params.get("admin") == "true"
-
-if is_admin_via_url:
-    # Direct access to the admin metrics via custom secret link
-    with st.expander("📊 Private Admin Telemetry Panel (Unlocked via URL)"):
+if is_admin_via_secret:
+    st.write("---")
+    with st.expander("📊 Private Admin Telemetry Panel (Unlocked)", expanded=True):
         try:
             total_chats, avg_bdi, avg_time, logs = get_stats()
             
@@ -229,32 +227,3 @@ if is_admin_via_url:
                 st.info("No recorded stats yet.")
         except Exception as e:
             st.error(f"Error accessing records: {e}")
-else:
-    # Discrete password option at the bottom of the page
-    with st.expander("🔑 Access System Panel"):
-        entered_pass = st.text_input("Enter Master Key", type="password")
-        if entered_pass == ADMIN_PASSWORD:
-            try:
-                total_chats, avg_bdi, avg_time, logs = get_stats()
-                
-                metric_col1, metric_col2, metric_col3 = st.columns(3)
-                metric_col1.metric("Total Generated", total_chats)
-                metric_col2.metric("Avg BDI Score", f"{avg_bdi}%")
-                metric_col3.metric("Avg Session Time", f"{avg_time}s")
-                
-                if logs:
-                    st.write("### Private Telemetry Database Logs")
-                    log_data = [{
-                        "Time": l[0][:16].replace("T", " "), 
-                        "User Query": l[1], 
-                        "BDI": f"{l[2]}%" if l[2] else "N/A",
-                        "Location/IP Address": l[3],
-                        "Time Active": f"{round(l[4], 1)}s"
-                    } for l in logs]
-                    st.table(log_data)
-                else:
-                    st.info("No recorded stats yet.")
-            except Exception as e:
-                st.error(f"Error accessing records: {e}")
-        elif entered_pass:
-            st.error("Invalid access key.")
