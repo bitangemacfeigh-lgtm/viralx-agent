@@ -4,6 +4,8 @@ import sqlite3
 import re
 from datetime import datetime
 import requests
+import io
+from PIL import Image, ImageDraw, ImageFont
 from streamlit_javascript import st_javascript  # Needs 'streamlit-javascript' in requirements.txt
 from agent import execute_agent_prompt
 
@@ -179,6 +181,84 @@ init_db()
 
 
 # ==========================================
+# 🎨 LIGHTWEIGHT ROAST CARD GENERATOR
+# ==========================================
+def generate_roast_card(query: str, bdi_score: int, roast_text: str) -> bytes:
+    """Generates a modern, high-contrast digital card for socials using Pillow."""
+    # Base configuration values
+    width, height = 800, 600
+    bg_color = (15, 15, 15)       # Ultra dark grey
+    accent_color = (255, 46, 99)   # Hot Neon Pink
+    text_color = (245, 245, 245)   # Off-white
+    dim_color = (150, 150, 150)    # Soft gray
+    
+    # Create image canvas
+    img = Image.new("RGB", (width, height), bg_color)
+    draw = ImageDraw.Draw(img)
+    
+    # Draw double card frame border
+    draw.rectangle([15, 15, width - 15, height - 15], outline=accent_color, width=2)
+    draw.rectangle([22, 22, width - 22, height - 22], outline=(30, 30, 30), width=1)
+    
+    # Load fonts cleanly
+    try:
+        title_font = ImageFont.load_default(size=28)
+        body_font = ImageFont.load_default(size=20)
+        small_font = ImageFont.load_default(size=14)
+    except Exception:
+        title_font = ImageFont.load_default()
+        body_font = ImageFont.load_default()
+        small_font = ImageFont.load_default()
+        
+    # Draw Header Elements
+    draw.text((40, 45), "💀 VIRALX AGENT // REALITY CHECK", fill=accent_color, font=title_font)
+    draw.line([(40, 85), (width - 40, 85)], fill=(40, 40, 40), width=1)
+    
+    # Draw User Query Block
+    draw.text((40, 105), "SUBJECT OF EVALUATION:", fill=dim_color, font=small_font)
+    truncated_query = query[:50] + "..." if len(query) > 50 else query
+    draw.text((40, 125), f'"{truncated_query}"', fill=text_color, font=title_font)
+    
+    # Draw BDI Score Bar
+    draw.text((40, 195), "📈 BRAIN DAMAGE INDEX:", fill=dim_color, font=small_font)
+    draw.text((250, 192), f"{bdi_score}%", fill=accent_color, font=body_font)
+    
+    # Progress Bar background
+    draw.rectangle([40, 225, width - 40, 240], fill=(30, 30, 30))
+    # Active fill
+    fill_width = int(40 + (width - 80) * (bdi_score / 100.0))
+    draw.rectangle([40, 225, fill_width, 240], fill=accent_color)
+    
+    # Draw Wrapped Roast Content (Simple wrap implementation)
+    draw.text((40, 275), "💀 THE ANALYSIS:", fill=dim_color, font=small_font)
+    
+    clean_roast = roast_text.replace("💀 THE BRUTAL ROAST", "").replace("📈 BRAIN DAMAGE INDEX", "").strip()
+    words = clean_roast.split()
+    lines = []
+    current_line = []
+    for word in words:
+        current_line.append(word)
+        # Wrap threshold
+        if len(" ".join(current_line)) > 58:
+            current_line.pop()
+            lines.append(" ".join(current_line))
+            current_line = [word]
+    lines.append(" ".join(current_line))
+    
+    y_offset = 305
+    for line in lines[:8]:  # Limit to 8 lines on card to prevent overflowing boundaries
+        draw.text((40, y_offset), line, fill=text_color, font=body_font)
+        y_offset += 28
+        
+    # Draw Watermark at the bottom
+    draw.text((40, height - 55), "GENERATE YOURS AT: bitangemacfeigh-lgtm-viralx-agent-app-yluloq.streamlit.app", fill=dim_color, font=small_font)
+    
+    byte_io = io.BytesIO()
+    img.save(byte_io, format="PNG")
+    return byte_io.getvalue()
+
+
+# ==========================================
 # 📱 USER INTERFACE RENDER
 # ==========================================
 
@@ -192,6 +272,14 @@ with col2:
         st.session_state.session_start = datetime.utcnow()
         st.rerun()
 
+# --- NEW ADDITION: 🎨 CUSTOM PAIN PROFILES ---
+st.write("### Choose Your Flavor of Pain")
+personality_mode = st.segmented_control(
+    "Select Assistant Personality:",
+    options=["💀 Default Savage", "💼 Corporate Savage", "🎓 Intellectual Elitist", "🧠 Brainrot Overdose"],
+    default="💀 Default Savage",
+    label_visibility="collapsed"
+)
 st.divider()
 
 # 3. Initialize Persistent Chat History
@@ -199,9 +287,28 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 # 4. Render the Ongoing Thread Flow
-for message in st.session_state.messages:
+for idx, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        
+        # If it's an assistant response, offer an instant PNG Download Card option
+        if message["role"] == "assistant" and "System Error" not in message["content"] and "Execution Fault" not in message["content"]:
+            # Parse metrics from prompt history mapping
+            linked_query = st.session_state.messages[idx - 1]["content"] if idx > 0 else "Evaluation Topic"
+            bdi_match = re.search(r'(\d+)%', message["content"])
+            bdi_val = int(bdi_match.group(1)) if bdi_match else 100
+            
+            try:
+                card_png = generate_roast_card(linked_query, bdi_val, message["content"])
+                st.download_button(
+                    label="📥 Download Roast Card PNG",
+                    data=card_png,
+                    file_name=f"ViralX_Roast_{idx}.png",
+                    mime="image/png",
+                    key=f"dl_btn_{idx}"
+                )
+            except Exception as e:
+                pass
 
 # 5. Bottom Space Chat Input Gateway (Open-ended & Random Input)
 if prompt := st.chat_input("Drop anything here—a concept, a trend, a place, or a bad habit..."):
@@ -212,7 +319,17 @@ if prompt := st.chat_input("Drop anything here—a concept, a trend, a place, or
 
     with st.chat_message("assistant"):
         with st.spinner("THINKING..."):
-            general_modifier = f"CRITICAL DIRECTION: The user is NOT submitting a tech stack. Roast this topic generally, randomly, and brutally based on real-world culture and context: {prompt}"
+            # Construct modified instructional system framework based on selected Pain Profile
+            if personality_mode == "💼 Corporate Savage":
+                style_direction = "Adopt a hyper-passive-aggressive corporate email/workplace consultant persona. Reference performance reviews, standard operating procedures, and KPIs."
+            elif personality_mode == "🎓 Intellectual Elitist":
+                style_direction = "Adopt an incredibly condescending, pretentious academic persona. Use overly intellectual terminology, esoteric vocabulary, and look down heavily on the user's simplistic thoughts."
+            elif personality_mode == "🧠 Brainrot Overdose":
+                style_direction = "Adopt a degenerate, terminally-online Gen-Z persona. Squeeze in slang like Skibidi, Ohio, Rizz, Gyatt, Fanum Tax, Sigma, and Mewing mercilessly."
+            else:
+                style_direction = "Roast this topic generally, randomly, and brutally based on real-world culture and context."
+
+            general_modifier = f"CRITICAL DIRECTION: The user is NOT submitting a tech stack. {style_direction} Roast this query: {prompt}"
             
             try:
                 res = asyncio.run(execute_agent_prompt(general_modifier))
@@ -225,6 +342,21 @@ if prompt := st.chat_input("Drop anything here—a concept, a trend, a place, or
                 response_text = f"System Error: {str(e)}"
             
             st.markdown(response_text)
+            
+            # Offer download option immediately upon generation
+            bdi_match = re.search(r'(\d+)%', response_text)
+            bdi_val = int(bdi_match.group(1)) if bdi_match else 100
+            try:
+                card_png = generate_roast_card(prompt, bdi_val, response_text)
+                st.download_button(
+                    label="📥 Download Roast Card PNG",
+                    data=card_png,
+                    file_name="ViralX_Roast_Latest.png",
+                    mime="image/png",
+                    key="dl_btn_latest"
+                )
+            except Exception:
+                pass
             
     st.session_state.messages.append({"role": "assistant", "content": response_text})
     
