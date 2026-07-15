@@ -3,6 +3,7 @@ import asyncio
 import sqlite3
 import re
 from datetime import datetime
+import requests
 from agent import execute_agent_prompt
 
 # 1. Claude-inspired General Page Setup (Stripping out tech branding)
@@ -80,15 +81,53 @@ def init_db():
     conn.commit()
     conn.close()
 
-def get_user_location():
-    """Extracts IP address and Country from Streamlit deployment headers."""
+def get_client_ip():
+    """Extracts the true public IP address of the user."""
     try:
         headers = st.context.headers
-        ip = headers.get("X-Forwarded-For", "Unknown IP").split(",")[0].strip()
-        country = headers.get("Cf-Ipcountry", "Unknown Country")
-        return f"{ip} ({country})"
+        if headers:
+            # X-Forwarded-For contains the true client IP as the first element
+            xff = headers.get("X-Forwarded-For") or headers.get("x-forwarded-for")
+            if xff:
+                true_ip = xff.split(",")[0].strip()
+                if not true_ip.startswith("10.") and not true_ip.startswith("172.") and not true_ip.startswith("192."):
+                    return true_ip
+            
+            for header_key in ["X-Real-IP", "x-real-ip", "CF-Connecting-IP", "cf-connecting-ip"]:
+                val = headers.get(header_key)
+                if val:
+                    return val
+
+        # Try fallback native property
+        st_ip = st.context.ip_address
+        if st_ip and not st_ip.startswith("10."):
+            return st_ip
     except Exception:
-        return "Localhost/Unknown"
+        pass
+    return "Unknown IP"
+
+def get_ip_location(ip):
+    """Resolves a public IP address to a physical location."""
+    if not ip or ip == "Unknown IP" or ip.startswith("10.") or ip.startswith("127.") or ip.startswith("172."):
+        return "Local/Internal IP"
+        
+    try:
+        response = requests.get(f"http://ip-api.com/json/{ip}", timeout=3)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("status") == "success":
+                city = data.get("city", "")
+                country = data.get("country", "")
+                return f"{city}, {country}" if city else country
+    except Exception:
+        pass
+    return "Unknown Country"
+
+def get_user_location():
+    """Combines IP extraction and geolocation for saving."""
+    user_ip = get_client_ip()
+    user_location = get_ip_location(user_ip)
+    return f"{user_ip} ({user_location})"
 
 def log_interaction(prompt: str, response: str):
     """Saves the user's prompt, response, location, and elapsed time."""
